@@ -716,7 +716,7 @@
         async function markAsRead(id, type) {
             const newStatus = type === 'contact' ? 'read' : 'contacted';
             try {
-                await fetch(`${API_URL}/dashboard/${type}s/${id}`, {
+                await fetch(`${API_URL}/${type}/${id}`, {
                     method: 'PUT',
                     headers: { 
                         'Content-Type': 'application/json',
@@ -744,7 +744,7 @@
             try {
                 // Note: You'll need to add a DELETE endpoint in your backend
                 // For now, we'll just reload the data
-                await fetch(`${API_URL}/dashboard/${type}s/${id}`, {
+                await fetch(`${API_URL}/${type}/${id}`, {
                     method: "DELETE",
                     headers: { 'Authorization': `Bearer ${token}` }
                 }).catch(() => {});
