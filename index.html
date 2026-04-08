@@ -246,12 +246,13 @@
             backdrop-filter: blur(4px);
             border-radius: 20px;
             border: 1px solid rgba(201, 162, 39, 0.12);
-            overflow: hidden;
+            overflow-x: auto;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         }
         table {
             width: 100%;
             border-collapse: collapse;
+            min-width: 800px;
         }
         th {
             padding: 18px 16px;
@@ -292,24 +293,66 @@
         .status-qualified { background: rgba(139, 92, 246, 0.12); color: #a78bfa; }
         .status-closed { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
         
-        /* Action Buttons */
+        /* Action Menu */
+        .action-menu {
+            position: relative;
+            display: inline-block;
+        }
         .action-btn {
             background: none;
             border: none;
             cursor: pointer;
             padding: 8px;
-            margin: 0 4px;
             border-radius: 10px;
             transition: all 0.2s;
             color: #9ca3af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .action-btn:hover {
             background: rgba(201, 162, 39, 0.15);
             color: #c9a227;
-            transform: scale(1.05);
+        }
+        .action-dropdown {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: #1a221a;
+            border: 1px solid rgba(201, 162, 39, 0.2);
+            border-radius: 12px;
+            min-width: 140px;
+            z-index: 100;
+            display: none;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+        .action-dropdown.show {
+            display: block;
+        }
+        .action-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 13px;
+            color: #d1d5db;
+        }
+        .action-dropdown-item:hover {
+            background: rgba(201, 162, 39, 0.15);
+            color: #c9a227;
+        }
+        .action-dropdown-item.delete:hover {
+            background: rgba(220, 38, 38, 0.15);
+            color: #f87171;
+        }
+        .action-dropdown-item i {
+            width: 16px;
+            height: 16px;
         }
         
-        /* Message Preview */
         .message-preview {
             max-width: 250px;
             white-space: nowrap;
@@ -368,14 +411,32 @@
             line-height: 1.6;
             margin-bottom: 24px;
         }
-        .modal-close {
-            background: #c9a227;
-            color: #0a0a0a;
-            border: none;
-            padding: 10px 24px;
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+        .modal-btn {
+            padding: 10px 20px;
             border-radius: 40px;
+            border: none;
             cursor: pointer;
             font-weight: 600;
+            transition: 0.2s;
+        }
+        .modal-btn.confirm {
+            background: #dc2626;
+            color: white;
+        }
+        .modal-btn.confirm:hover {
+            background: #ef4444;
+        }
+        .modal-btn.cancel {
+            background: rgba(255, 255, 255, 0.1);
+            color: #d1d5db;
+        }
+        .modal-btn.cancel:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
         
         @media (max-width: 768px) {
@@ -386,8 +447,6 @@
             .main-content { margin-left: 80px; padding: 20px; }
             .nav-item { justify-content: center; }
             .stats-grid { grid-template-columns: 1fr; }
-            th, td { padding: 10px 8px; font-size: 12px; }
-            .message-preview { max-width: 120px; }
         }
     </style>
 </head>
@@ -460,13 +519,28 @@
         <div class="modal-content">
             <h3 id="modalTitle">Message Details</h3>
             <p id="modalBody"></p>
-            <button class="modal-close" onclick="closeModal()">Close</button>
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content">
+            <h3>Confirm Delete</h3>
+            <p>Are you sure you want to delete this item? This action cannot be undone.</p>
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="closeDeleteModal()">Cancel</button>
+                <button class="modal-btn confirm" id="confirmDeleteBtn">Delete</button>
+            </div>
         </div>
     </div>
 
     <script>
         const API_URL = 'https://richyards-api.onrender.com/api';
         let token = null;
+        let pendingDelete = { type: null, id: null };
         
         async function login() {
             const username = document.getElementById('username').value;
@@ -552,10 +626,11 @@
                             <td><div class="message-preview">${escapeHtml(c.message.substring(0, 70))}${c.message.length > 70 ? '...' : ''}</div></td>
                             <td><span class="status-badge status-${c.status}">${c.status}</span></td>
                             <td style="color:#9ca3af; font-size:12px;">${new Date(c.created_at).toLocaleDateString()}</td>
-                            <td><button class="action-btn view-btn" onclick="viewContact(${c.id})" title="View Full Message"><i data-lucide="eye"></i></button></td>
+                            <td>${getActionMenu(c.id, 'contact')}</td>
                         </tr>
                     `).join('');
                     lucide.createIcons();
+                    attachDropdownEvents();
                 }
             } catch(e) { console.error(e); }
         }
@@ -577,12 +652,117 @@
                             <td><span style="background:rgba(201,162,39,0.1); padding:4px 10px; border-radius:20px; font-size:11px;">${l.sector || '-'}</span></td>
                             <td><span class="status-badge status-${l.status}">${l.status}</span></td>
                             <td style="color:#9ca3af; font-size:12px;">${new Date(l.created_at).toLocaleDateString()}</td>
-                            <td><button class="action-btn view-btn" onclick="viewLead(${l.id})" title="View Full Details"><i data-lucide="eye"></i></button></td>
+                            <td>${getActionMenu(l.id, 'lead')}</td>
                         </tr>
                     `).join('');
                     lucide.createIcons();
+                    attachDropdownEvents();
                 }
             } catch(e) { console.error(e); }
+        }
+        
+        function getActionMenu(id, type) {
+            return `
+                <div class="action-menu">
+                    <button class="action-btn" data-id="${id}" data-type="${type}" onclick="toggleDropdown(event, ${id}, '${type}')">
+                        <i data-lucide="settings"></i>
+                    </button>
+                    <div class="action-dropdown" id="dropdown-${type}-${id}">
+                        <div class="action-dropdown-item" onclick="viewItem(${id}, '${type}')">
+                            <i data-lucide="eye"></i> View Details
+                        </div>
+                        <div class="action-dropdown-item" onclick="markAsRead(${id}, '${type}')">
+                            <i data-lucide="check-circle"></i> Mark as Read
+                        </div>
+                        <div class="action-dropdown-item delete" onclick="deleteItem(${id}, '${type}')">
+                            <i data-lucide="trash-2"></i> Delete
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function toggleDropdown(event, id, type) {
+            event.stopPropagation();
+            const dropdownId = `dropdown-${type}-${id}`;
+            const dropdown = document.getElementById(dropdownId);
+            
+            // Close all other dropdowns
+            document.querySelectorAll('.action-dropdown').forEach(d => {
+                if (d.id !== dropdownId) d.classList.remove('show');
+            });
+            
+            dropdown.classList.toggle('show');
+        }
+        
+        function attachDropdownEvents() {
+            // Close dropdowns when clicking outside
+            document.addEventListener('click', function() {
+                document.querySelectorAll('.action-dropdown').forEach(d => {
+                    d.classList.remove('show');
+                });
+            });
+        }
+        
+        async function viewItem(id, type) {
+            if (type === 'contact') {
+                await viewContact(id);
+            } else {
+                await viewLead(id);
+            }
+            closeAllDropdowns();
+        }
+        
+        async function markAsRead(id, type) {
+            const newStatus = type === 'contact' ? 'read' : 'contacted';
+            try {
+                await fetch(`${API_URL}/dashboard/${type}s/${id}`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                if (type === 'contact') {
+                    await loadContacts();
+                } else {
+                    await loadLeads();
+                }
+            } catch(e) { console.error(e); }
+            closeAllDropdowns();
+        }
+        
+        function deleteItem(id, type) {
+            pendingDelete = { type, id };
+            document.getElementById('deleteModal').classList.add('active');
+            closeAllDropdowns();
+        }
+        
+        async function confirmDelete() {
+            const { type, id } = pendingDelete;
+            try {
+                // Note: You'll need to add a DELETE endpoint in your backend
+                // For now, we'll just reload the data
+                await fetch(`${API_URL}/dashboard/${type}s/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }).catch(() => {});
+                
+                if (type === 'contact') {
+                    await loadContacts();
+                } else {
+                    await loadLeads();
+                }
+                await loadStats();
+            } catch(e) { console.error(e); }
+            closeDeleteModal();
+        }
+        
+        function closeAllDropdowns() {
+            document.querySelectorAll('.action-dropdown').forEach(d => {
+                d.classList.remove('show');
+            });
         }
         
         async function viewContact(id) {
@@ -611,6 +791,13 @@
             document.getElementById('detailModal').classList.remove('active');
         }
         
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+            pendingDelete = { type: null, id: null };
+        }
+        
+        document.getElementById('confirmDeleteBtn').onclick = confirmDelete;
+        
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/[&<>]/g, function(m) {
@@ -621,9 +808,11 @@
             });
         }
         
-        // Close modal on escape key
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') {
+                closeModal();
+                closeDeleteModal();
+            }
         });
         
         lucide.createIcons();
